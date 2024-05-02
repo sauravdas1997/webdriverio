@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import path from 'node:path'
 import BrowserStackConfig from './config'
 import { saveFunnelData } from './instrumentation/funnelInstrumentation'
-import { TESTOPS_JWT_ENV } from './constants'
+import { BROWSERSTACK_TESTHUB_JWT } from './constants'
 import { BStackLogger } from './bstackLogger'
 
 export function setupExitHandlers() {
@@ -20,7 +20,7 @@ export function setupExitHandlers() {
 
 export function shouldCallCleanup(config: BrowserStackConfig): string[] {
     const args: string[] = []
-    if (!!process.env[TESTOPS_JWT_ENV] && !config.testObservability.buildStopped) {
+    if (!!process.env[BROWSERSTACK_TESTHUB_JWT] && !config.testObservability.buildStopped) {
         args.push('--observability')
     }
 

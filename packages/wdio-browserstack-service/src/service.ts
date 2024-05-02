@@ -24,6 +24,7 @@ import PercyHandler from './Percy/Percy-Handler'
 import Listener from './testOps/listener'
 import { saveWorkerData } from './data-store'
 import UsageStats from './testOps/usageStats'
+import { shouldProcessEventForTesthub } from './testHub/utils'
 
 const log = logger('@wdio/browserstack-service')
 
@@ -59,7 +60,7 @@ export default class BrowserstackService implements Services.ServiceInstance {
         this._percy = this._options.percy
         this._turboScale = this._options.turboScale
 
-        if (this._observability) {
+        if (shouldProcessEventForTesthub('')) {
             this._config.reporters?.push(TestReporter)
             if (process.env[PERF_MEASUREMENT_ENV]) {
                 PerformanceTester.startMonitoring('performance-report-service.csv')
@@ -125,30 +126,8 @@ export default class BrowserstackService implements Services.ServiceInstance {
         this._scenariosThatRan = []
 
         if (this._browser) {
-            if (this._percy) {
-                this._percyHandler = new PercyHandler(
-                    this._options.percyCaptureMode,
-                    this._browser,
-                    this._caps,
-                    this._isAppAutomate(),
-                    this._config.framework
-                )
-                this._percyHandler.before()
-            }
-            try {
-                if (this._observability) {
-                    patchConsoleLogs()
-                    this._insightsHandler = new InsightsHandler(
-                        this._browser,
-                        this._browser.capabilities as Capabilities.Capabilities,
-                        this._isAppAutomate(),
-                        this._browser.sessionId as string,
-                        this._config.framework,
-                        this._caps
-                    )
-                    await this._insightsHandler.before()
-                }
 
+            try {
                 if (this._browser && isBrowserstackSession(this._browser)) {
                     try {
                         this._accessibilityHandler = new AccessibilityHandler(
@@ -160,16 +139,31 @@ export default class BrowserstackService implements Services.ServiceInstance {
                             this._options.accessibilityOptions
                         )
                         await this._accessibilityHandler.before(this._browser.sessionId as string)
+                        Listener.setAccessibilityOptions(this._options.accessibilityOptions)
                     } catch (err) {
                         log.error(`[Accessibility Test Run] Error in service class before function: ${err}`)
                     }
+                }
+
+                if (shouldProcessEventForTesthub('')) {
+                    patchConsoleLogs()
+
+                    this._insightsHandler = new InsightsHandler(
+                        this._browser,
+                        this._browser.capabilities as Capabilities.Capabilities,
+                        this._isAppAutomate(),
+                        this._browser.sessionId as string,
+                        this._config.framework,
+                        this._caps
+                    )
+                    await this._insightsHandler.before()
                 }
 
                 /**
                  * register command event
                  */
                 this._browser.on('command', async (command) => {
-                    if (this._observability) {
+                    if (shouldProcessEventForTesthub('')) {
                         await this._insightsHandler?.browserCommand(
                             'client:beforeCommand',
                             Object.assign(command, { sessionId: this._browser?.sessionId }),
@@ -185,7 +179,7 @@ export default class BrowserstackService implements Services.ServiceInstance {
                  * register result event
                  */
                 this._browser.on('result', async (result) => {
-                    if (this._observability) {
+                    if (shouldProcessEventForTesthub('')) {
                         await this._insightsHandler?.browserCommand(
                             'client:afterCommand',
                             Object.assign(result, { sessionId: this._browser?.sessionId }),
@@ -198,9 +192,19 @@ export default class BrowserstackService implements Services.ServiceInstance {
                 })
             } catch (err) {
                 log.error(`Error in service class before function: ${err}`)
-                if (this._observability) {
+                if (shouldProcessEventForTesthub('')) {
                     CrashReporter.uploadCrashReport(`Error in service class before function: ${err}`, err && (err as any).stack)
                 }
+            }
+            if (this._percy) {
+                this._percyHandler = new PercyHandler(
+                    this._options.percyCaptureMode,
+                    this._browser,
+                    this._caps,
+                    this._isAppAutomate(),
+                    this._config.framework
+                )
+                this._percyHandler.before()
             }
         }
 
@@ -245,10 +249,10 @@ export default class BrowserstackService implements Services.ServiceInstance {
             }
         }
 
+        await this._accessibilityHandler?.beforeTest(suiteTitle, test)
         await this._setSessionName(suiteTitle, test)
         await this._setAnnotation(`Test: ${test.fullName ?? test.title}`)
         await this._insightsHandler?.beforeTest(test)
-        await this._accessibilityHandler?.beforeTest(suiteTitle, test)
     }
 
     async afterTest(test: Frameworks.Test, context: never, results: Frameworks.TestResult) {
