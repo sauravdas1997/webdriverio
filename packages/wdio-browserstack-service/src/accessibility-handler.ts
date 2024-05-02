@@ -206,6 +206,8 @@ class _AccessibilityHandler {
     async beforeScenario (world: ITestCaseHookParameter) {
         const pickleData = world.pickle
         const uniqueId = getUniqueIdentifierForCucumber(world)
+        const gherkinDocument = world.gherkinDocument
+        const featureData = gherkinDocument.feature
 
         if (!this.shouldRunTestHooks(this._browser, this._accessibility)) {
             return
@@ -240,8 +242,6 @@ class _AccessibilityHandler {
 
         const pickleData = world.pickle
         try {
-            const gherkinDocument = world.gherkinDocument
-            const featureData = gherkinDocument.feature
             const uniqueId = getUniqueIdentifierForCucumber(world)
             const accessibilityScanStarted = this._testMetadata[uniqueId]?.accessibilityScanStarted
             const shouldScanTestForAccessibility = this._testMetadata[uniqueId]?.scanTestForAccessibility
