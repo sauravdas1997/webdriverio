@@ -20,9 +20,10 @@ import {
     getUniqueIdentifierForCucumber,
     isBrowserstackSession,
     isScreenshotCommand,
+    isUndefined,
     o11yClassErrorHandler,
     removeAnsiColors,
-    getFailureObject,
+    getFailureObject, GitMetaData, isObjectEmpty,
 } from './util'
 import type { TestData, TestMeta, PlatformMeta, CurrentRunInfo, StdLog } from './types'
 import Listener from './testOps/listener'
@@ -75,9 +76,9 @@ class _InsightsHandler {
             await this._browser.execute(`browserstack_executor: {"action": "annotate", "arguments": {"data": "ObservabilitySync:${Date.now()}","level": "debug"}}`)
         }
 
-        const gitMeta = await getGitMetaData()
-        if (gitMeta) {
-            this._gitConfigPath = gitMeta.root
+        const gitMeta: {} | GitMetaData = await getGitMetaData()
+        if (gitMeta && !isObjectEmpty(gitMeta)) {
+            this._gitConfigPath = (gitMeta as GitMetaData).root
         }
     }
 
@@ -611,7 +612,7 @@ class _InsightsHandler {
                 if (error && testData.result != 'skipped') {
                     testData.failure = [{ backtrace: [removeAnsiColors(error.message)] }] // add all errors here
                     testData.failure_reason = removeAnsiColors(error.message)
-                    testData.failure_type = error.message == null ? null : error.message.toString().match(/AssertionError/) ? 'AssertionError' : 'UnhandledError' //verify if this is working
+                    testData.failure_type = isUndefined(error.message) ? null : error.message.toString().match(/AssertionError/) ? 'AssertionError' : 'UnhandledError' //verify if this is working
                 }
             } else {
                 testData.result = 'passed'

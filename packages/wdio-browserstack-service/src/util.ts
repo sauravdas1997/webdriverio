@@ -28,7 +28,9 @@ import {
     TESTOPS_JWT_ENV,
     TESTOPS_BUILD_ID_ENV,
     TESTOPS_SCREENSHOT_ENV,
-    PERF_MEASUREMENT_ENV, RERUN_ENV
+    PERF_MEASUREMENT_ENV, RERUN_ENV,
+    MAX_GIT_META_DATA_SIZE_IN_BYTES,
+    GIT_META_DATA_TRUNCATED
 } from './constants'
 
 import PerformanceTester from './performance-tester'
@@ -38,6 +40,25 @@ import TestOpsConfig from './testOps/testOpsConfig'
 
 const pGitconfig = promisify(gitconfig)
 const log = logger('@wdio/browserstack-service')
+
+export type GitMetaData = {
+    name: string;
+    sha: string;
+    short_sha: string;
+    branch: string;
+    tag: string | null;
+    committer: string;
+    committer_date: string;
+    author: string;
+    author_date: string;
+    commit_message: string;
+    root: string;
+    common_git_dir: string;
+    worktree_git_dir: string;
+    last_tag: string | null;
+    commits_since_last_tag: number;
+    remotes: Array<{ name: string; url: string }>;
+};
 
 export const DEFAULT_REQUEST_CONFIG = {
     agent: {
@@ -583,7 +604,7 @@ export async function getGitMetaData () {
     if (!info.commonGitDir) return {}
     const { remote } = await pGitconfig(info.commonGitDir)
     const remotes = remote ? Object.keys(remote).map(remoteName =>  ({ name: remoteName, url: remote[remoteName]['url'] })) : []
-    return {
+    let gitMetaData : GitMetaData = {
         name: 'git',
         sha: info.sha,
         short_sha: info.abbreviatedSha,
@@ -601,6 +622,9 @@ export async function getGitMetaData () {
         commits_since_last_tag: info.commitsSinceLastTag,
         remotes: remotes
     }
+
+    gitMetaData = checkAndTruncateVCSInfo(gitMetaData)
+    return gitMetaData
 }
 
 export function getUniqueIdentifier(test: Frameworks.Test, framework?: string): string {
@@ -622,7 +646,15 @@ export function getUniqueIdentifierForCucumber(world: ITestCaseHookParameter): s
 }
 
 export function getCloudProvider(browser: Browser<'async'> | MultiRemoteBrowser<'async'>): string {
-    if (browser.options && browser.options.hostname && browser.options.hostname.includes('browserstack')) {
+    if (browser && 'instances' in browser) {
+        // Loop through all instances
+        for (const instanceName of browser.instances) {
+            const instance = browser[instanceName]
+            if (instance.options && instance.options.hostname && instance.options.hostname.includes('browserstack')) {
+                return 'browserstack'
+            }
+        }
+    } else if (browser.options && browser.options.hostname && browser.options.hostname.includes('browserstack')) { // Single browser instance
         return 'browserstack'
     }
     return 'unknown_grid'
@@ -716,8 +748,65 @@ export function isBStackSession(config: Options.Testrunner) {
     return false
 }
 
-export function shouldAddServiceVersion(config: Options.Testrunner, testObservability?: boolean): boolean {
-    if (config.services && config.services.toString().includes('chromedriver') && testObservability != false) {
+export function isBrowserstackInfra(config: BrowserstackConfig & Options.Testrunner, caps?: Capabilities.BrowserStackCapabilities): boolean {
+    // a utility function to check if the hostname is browserstack
+
+    const isBrowserstack = (str: string ): boolean => {
+        return str.includes('browserstack.com')
+    }
+
+    if ((config.hostname) && !isBrowserstack(config.hostname)) {
+        return false
+    }
+
+    if (caps && typeof caps === 'object') {
+        if (Array.isArray(caps)) {
+            for (const capability of caps) {
+                if (((capability as Options.Testrunner).hostname) && !isBrowserstack((capability as Options.Testrunner).hostname as string)) {
+                    return false
+                }
+            }
+        } else {
+            for (const key in caps) {
+                const capability = (caps as any)[key]
+                if (((capability as Options.Testrunner).hostname) && !isBrowserstack((capability as Options.Testrunner).hostname as string)) {
+                    return false
+                }
+            }
+        }
+    }
+
+    if (!isBStackSession(config)) {
+        return false
+    }
+
+    return true
+}
+
+export function getBrowserStackUserAndKey(config: Options.Testrunner, options: Options.Testrunner) {
+
+    // Fallback 1: Env variables
+    // Fallback 2: Service variables in wdio.conf.js (that are received inside options object)
+    const envOrServiceVariables = {
+        user: getBrowserStackUser(options),
+        key: getBrowserStackKey(options)
+    }
+    if (envOrServiceVariables.user && envOrServiceVariables.key) {
+        return envOrServiceVariables
+    }
+
+    // Fallback 3: Service variables in testObservabilityOptions object
+    // Fallback 4: Service variables in the top level config object
+    const o11yVariables = {
+        user: getObservabilityUser(options, config),
+        key: getObservabilityKey(options, config)
+    }
+    return o11yVariables
+
+}
+
+export function shouldAddServiceVersion(config: Options.Testrunner, testObservability?: boolean, caps?: Capabilities.BrowserStackCapabilities): boolean {
+    if ((config.services && config.services.toString().includes('chromedriver') && testObservability !== false) || !isBrowserstackInfra(config, caps)) {
         return false
     }
     return true
@@ -1183,4 +1272,62 @@ export const getErrorString = (err: unknown) => {
     } else if (err instanceof Error) {
         return err.message // works, `e` narrowed to Error
     }
+}
+
+export function truncateString(field: string, truncateSizeInBytes: number): string {
+    try {
+        const bufferSizeInBytes = Buffer.from(GIT_META_DATA_TRUNCATED).length
+
+        const fieldBufferObj = Buffer.from(field)
+        const lenOfFieldBufferObj = fieldBufferObj.length
+        const finalLen = Math.ceil(lenOfFieldBufferObj - truncateSizeInBytes - bufferSizeInBytes)
+        if (finalLen > 0) {
+            const truncatedString = fieldBufferObj.subarray(0, finalLen).toString() + GIT_META_DATA_TRUNCATED
+            return truncatedString
+        }
+    } catch (error) {
+        log.debug(`Error while truncating field, nothing was truncated here: ${error}`)
+    }
+    return field
+}
+
+export function getSizeOfJsonObjectInBytes(jsonData: GitMetaData): number {
+    try {
+        const buffer = Buffer.from(JSON.stringify(jsonData))
+        return buffer.length
+    } catch (error) {
+        log.debug(`Something went wrong while calculating size of JSON object: ${error}`)
+    }
+
+    return -1
+}
+
+export function checkAndTruncateVCSInfo(gitMetaData: GitMetaData): GitMetaData {
+    const gitMetaDataSizeInBytes = getSizeOfJsonObjectInBytes(gitMetaData)
+
+    if (gitMetaDataSizeInBytes && gitMetaDataSizeInBytes > MAX_GIT_META_DATA_SIZE_IN_BYTES) {
+        const truncateSize = gitMetaDataSizeInBytes - MAX_GIT_META_DATA_SIZE_IN_BYTES
+        const truncatedCommitMessage = truncateString(gitMetaData.commit_message, truncateSize)
+        gitMetaData.commit_message = truncatedCommitMessage
+        log.info(`The commit has been truncated. Size of commit after truncation is ${ getSizeOfJsonObjectInBytes(gitMetaData) / 1024 } KB`)
+    }
+
+    return gitMetaData
+}
+
+export const hasBrowserName = (cap: WebdriverIO.Config): boolean => {
+    if (!cap || !cap.capabilities) {
+        return false
+    }
+    const browserStackCapabilities = cap.capabilities as Capabilities.BrowserStackCapabilities
+    return browserStackCapabilities.browserName !== undefined
+}
+
+export const isValidCapsForHealing = (caps: { [key: string]: Options.Testrunner }): boolean => {
+
+    // Get all capability values
+    const capValues = Object.values(caps)
+
+    // Check if there are any capabilities and if at least one has a browser name
+    return capValues.length > 0 && capValues.some(hasBrowserName)
 }
