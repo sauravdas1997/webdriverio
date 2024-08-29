@@ -138,6 +138,8 @@ export default class BrowserstackLauncherService implements Services.ServiceInst
                         }
                     }
                     this._buildIdentifier = (caps.capabilities as WebdriverIO.Capabilities)['browserstack.buildIdentifier']
+                    this._buildName = (caps.capabilities as WebdriverIO.Capabilities).build
+                    this._projectName = (caps.capabilities as WebdriverIO.Capabilities).project
                 } else {
                     const bstackOptions = (caps.capabilities as WebdriverIO.Capabilities)['bstack:options']
                     bstackOptions!.wdioService = BSTACK_SERVICE_VERSION
