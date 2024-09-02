@@ -138,7 +138,9 @@ export default class BrowserstackLauncherService implements Services.ServiceInst
                         }
                     }
                     this._buildIdentifier = (caps.capabilities as WebdriverIO.Capabilities)['browserstack.buildIdentifier']
+                    // @ts-ignore
                     this._buildName = (caps.capabilities as WebdriverIO.Capabilities).build
+                    // @ts-ignore
                     this._projectName = (caps.capabilities as WebdriverIO.Capabilities).project
                 } else {
                     const bstackOptions = (caps.capabilities as WebdriverIO.Capabilities)['bstack:options']
