@@ -108,6 +108,7 @@ export default class BrowserstackLauncherService implements Services.ServiceInst
                         // Need this details for sending data to Observability
                         this._buildIdentifier = capability['browserstack.buildIdentifier']?.toString()
                         this._buildName = capability.build?.toString()
+                        this._projectName = capability.project?.toString()
                     } else {
                         capability['bstack:options'].wdioService = BSTACK_SERVICE_VERSION
                         this._buildName = capability['bstack:options'].buildName
@@ -139,6 +140,10 @@ export default class BrowserstackLauncherService implements Services.ServiceInst
                         }
                     }
                     this._buildIdentifier = (caps.capabilities as WebdriverIO.Capabilities)['browserstack.buildIdentifier']
+                    // @ts-ignore
+                    this._buildName = (caps.capabilities as WebdriverIO.Capabilities).build
+                    // @ts-ignore
+                    this._projectName = (caps.capabilities as WebdriverIO.Capabilities).project
                 } else {
                     const bstackOptions = (caps.capabilities as WebdriverIO.Capabilities)['bstack:options']
                     bstackOptions!.wdioService = BSTACK_SERVICE_VERSION
