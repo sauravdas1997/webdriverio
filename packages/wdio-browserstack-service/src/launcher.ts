@@ -112,6 +112,7 @@ export default class BrowserstackLauncherService implements Services.ServiceInst
                         this._buildIdentifier = capability['browserstack.buildIdentifier']?.toString()
                         // @ts-expect-error ToDo: fix invalid cap
                         this._buildName = capability.build?.toString()
+                        this._projectName = capability.project?.toString()
                     } else {
                         capability['bstack:options'].wdioService = BSTACK_SERVICE_VERSION
                         this._buildName = capability['bstack:options'].buildName
